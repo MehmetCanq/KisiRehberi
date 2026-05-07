@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 
 class Contact(models.Model):
-    # Kişiyi oluşturan kullanıcı
+    # Kişiyin sahibi kullanıcı
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="contacts")
     
     # Zorunlu 
