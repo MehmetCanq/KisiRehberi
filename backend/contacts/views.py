@@ -11,20 +11,15 @@ class ContactViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Contact.objects.filter(user=self.request.user)
-        
-        # Etiket filtresi
         tag = self.request.query_params.get('tag')
         if tag and tag != 'Hepsi':
             queryset = queryset.filter(tag=tag)
-            
-        # Arama filtresi (isim veya telefon numarası)
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
                 models.Q(full_name__icontains=search) |
                 models.Q(phone__icontains=search)
             )
-            
         return queryset.order_by('full_name')
 
     def perform_create(self, serializer):

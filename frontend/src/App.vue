@@ -235,9 +235,18 @@ watch(selectedTag, () => {
 onMounted(async () => {
   const token = localStorage.getItem('access_token');
   if (token) {
-    isAuthenticated.value = true;
-    await fetchCurrentUser();
-    await fetchContacts();
+    loading.value = true;
+    try {
+      const response = await api.get('me/');
+      currentUser.value = response.data;
+      isAuthenticated.value = true;
+      await fetchContacts();
+    } catch (error) {
+      console.warn('Oturum geçersiz veya süresi dolmuş. Giriş sayfasına yönlendiriliyorsunuz.');
+      handleSessionExpired();
+    } finally {
+      loading.value = false;
+    }
   }
 });
 </script>
@@ -591,25 +600,25 @@ onMounted(async () => {
 </template>
 
 <style>
-/* Sleek Western Minimalist Dark Theme (Linear/Vercel inspired) */
+/* Pure Zinc Minimalist Dark Theme (Western/Linear style) */
 :root {
-  --primary: #2563eb; 
-  --primary-hover: #1d4ed8;
-  --primary-light: rgba(37, 99, 235, 0.1);
-  --success: #059669; 
-  --danger: #dc2626;
-  --danger-hover: #b91c1c;
-  --bg-app: #0b0f19; /* Deep cool navy graphite */
-  --bg-card: #151b2a; /* Cool graphite card background */
-  --border: #232d42; /* Sleek slate borders */
-  --text-main: #cbd5e1; /* Soft cool grey text */
-  --text-muted: #64748b; /* Slate grey */
-  --text-heading: #ffffff; /* Crisp white headers */
+  --primary: #f4f4f5; 
+  --primary-hover: #e4e4e7;
+  --primary-light: rgba(244, 244, 245, 0.08);
+  --success: #10b981; 
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+  --bg-app: #09090b; /* Deep matte Zinc-950 charcoal */
+  --bg-card: #18181b; /* Matte Zinc-900 card */
+  --border: #27272a; /* Zinc-800 border line */
+  --text-main: #a1a1aa; /* Zinc-400 clean grey */
+  --text-muted: #52525b; /* Zinc-600 subtle details */
+  --text-heading: #f4f4f5; /* Zinc-100 soft header */
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
-  --radius-sm: 4px;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6);
+  --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
 }
@@ -649,7 +658,7 @@ button {
 
 .btn-primary {
   background-color: var(--primary);
-  color: white;
+  color: #09090b; /* Dark charcoal text for readability on light primary background */
   padding: 9px 18px;
 }
 
@@ -658,14 +667,14 @@ button {
 }
 
 .btn-secondary {
-  background-color: #1e293b;
+  background-color: #27272a;
   color: var(--text-main);
   padding: 9px 18px;
   border: 1px solid var(--border);
 }
 
 .btn-secondary:hover {
-  background-color: #334155;
+  background-color: #3f3f46;
 }
 
 .btn-danger {
@@ -733,7 +742,7 @@ button {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: #080b11;
+  background: var(--bg-app);
 }
 
 .auth-card {
@@ -761,7 +770,7 @@ button {
 
 .brand-icon {
   background-color: var(--primary-light);
-  color: var(--primary);
+  color: var(--text-heading);
   width: 36px;
   height: 36px;
   border-radius: var(--radius-sm);
@@ -809,8 +818,8 @@ button {
 }
 
 .auth-tabs button.active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
+  color: var(--text-heading);
+  border-bottom-color: var(--text-heading);
 }
 
 .auth-form {
@@ -840,7 +849,7 @@ button {
   border-radius: var(--radius-sm);
   font-size: 0.92rem;
   outline: none;
-  background-color: #0b0f19;
+  background-color: var(--bg-app);
   color: var(--text-main);
 }
 
@@ -1001,7 +1010,7 @@ button {
   border-radius: var(--radius-sm);
   outline: none;
   font-size: 0.92rem;
-  background-color: #0b0f19;
+  background-color: var(--bg-app);
   color: var(--text-main);
 }
 
@@ -1014,7 +1023,7 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: none;
-  background-color: #0b0f19;
+  background-color: var(--bg-app);
   font-size: 0.92rem;
   color: var(--text-main);
   cursor: pointer;
@@ -1312,7 +1321,7 @@ button {
 
 .modal-select {
   padding: 8px 12px;
-  background-color: #0b0f19;
+  background-color: var(--bg-app);
   border: 1px solid var(--border);
 }
 
@@ -1400,7 +1409,7 @@ button {
 }
 
 .note-value {
-  background-color: #0b0f19;
+  background-color: var(--bg-app);
   padding: 8px 12px;
   border-radius: var(--radius-sm);
   width: 100%;
