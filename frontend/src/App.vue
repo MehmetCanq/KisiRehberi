@@ -25,6 +25,7 @@ const tags = ref(['Hepsi', 'Aile', 'İş', 'Arkadaş', 'Diğer']);
 // Custom Tag Addition State
 const customTagActive = ref(false);
 const customTagValue = ref('');
+const newGroupName = ref('');
 
 // Pagination
 const currentPage = ref(1);
@@ -251,6 +252,25 @@ const handleDeleteContact = async () => {
   }
 };
 
+const handleCreateGroup = () => {
+  const trimmed = newGroupName.value.trim();
+  if (!trimmed) {
+    addToast('Grup adı boş olamaz.', 'error');
+    return;
+  }
+  if (tags.value.includes(trimmed)) {
+    addToast('Bu grup zaten mevcut.', 'info');
+    selectedTag.value = trimmed;
+    closeModal();
+    return;
+  }
+  
+  tags.value.push(trimmed);
+  selectedTag.value = trimmed;
+  addToast(`'${trimmed}' grubu başarıyla eklendi.`, 'success');
+  closeModal();
+};
+
 // Modal helpers
 const openModal = (type, contact = null) => {
   activeModal.value = type;
@@ -288,12 +308,11 @@ watch(searchQuery, () => {
   }, 350);
 });
 
-watch(selectedTag, (newVal) => {
+watch(selectedTag, (newVal, oldVal) => {
   if (newVal === '__NEW_FILTER__') {
-    selectedTag.value = 'Hepsi';
-    newContact.value.tag = '__NEW__';
-    customTagActive.value = true;
-    openModal('create');
+    selectedTag.value = oldVal || 'Hepsi';
+    newGroupName.value = '';
+    openModal('create_group');
   } else {
     fetchContacts(1);
   }
@@ -672,6 +691,26 @@ onMounted(async () => {
           <button @click="closeModal" class="btn-secondary">Vazgeç</button>
           <button @click="handleDeleteContact" class="btn-danger">Kişiyi Sil</button>
         </div>
+      </div>
+    </div>
+
+    <!-- E. Create Group Modal -->
+    <div v-if="activeModal === 'create_group'" class="modal-overlay" @click.self="closeModal">
+      <div class="modal-card confirm-modal">
+        <div class="modal-header">
+          <h3>Yeni Grup Ekle</h3>
+          <button @click="closeModal" class="btn-close-modal">&times;</button>
+        </div>
+        <form @submit.prevent="handleCreateGroup" class="modal-form">
+          <div class="input-group">
+            <label>Grup Adı *</label>
+            <input v-model="newGroupName" type="text" placeholder="Örn: Fitness, Okul..." required>
+          </div>
+          <div class="modal-actions">
+            <button type="button" @click="closeModal" class="btn-secondary">İptal</button>
+            <button type="submit" class="btn-primary">Grup Ekle</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
