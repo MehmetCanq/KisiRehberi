@@ -26,6 +26,9 @@ const tags = ref(['Hepsi', 'Aile', 'İş', 'Arkadaş', 'Diğer']);
 const customTagActive = ref(false);
 const customTagValue = ref('');
 const newGroupName = ref('');
+const editingGroupName = ref('');
+const editGroupNameValue = ref('');
+const deletingGroupName = ref('');
 
 // Pagination
 const currentPage = ref(1);
@@ -271,6 +274,67 @@ const handleCreateGroup = () => {
   closeModal();
 };
 
+const openGroupEdit = (tag) => {
+  editingGroupName.value = tag;
+  editGroupNameValue.value = tag;
+  openModal('edit_group');
+};
+
+const openGroupDelete = (tag) => {
+  deletingGroupName.value = tag;
+  openModal('delete_group_confirm');
+};
+
+const handleRenameGroup = async () => {
+  const oldVal = editingGroupName.value;
+  const newVal = editGroupNameValue.value.trim();
+  if (!newVal) {
+    addToast('Grup adı boş olamaz.', 'error');
+    return;
+  }
+  if (oldVal === newVal) {
+    closeModal();
+    return;
+  }
+  try {
+    await api.post('contacts/rename_tag/', {
+      old_name: oldVal,
+      new_name: newVal
+    });
+    addToast(`'${oldVal}' grubu başarıyla '${newVal}' olarak güncellendi.`, 'success');
+    closeModal();
+    
+    await fetchTags();
+    if (selectedTag.value === oldVal) {
+      selectedTag.value = newVal;
+    } else {
+      await fetchContacts(currentPage.value);
+    }
+  } catch (error) {
+    addToast('Grup adı güncellenirken hata oluştu.', 'error');
+  }
+};
+
+const handleDeleteGroup = async () => {
+  const tagName = deletingGroupName.value;
+  try {
+    await api.post('contacts/delete_tag/', {
+      tag_name: tagName
+    });
+    addToast(`'${tagName}' grubu başarıyla silindi ve kişiler 'Diğer' grubuna aktarıldı.`, 'success');
+    closeModal();
+    
+    await fetchTags();
+    if (selectedTag.value === tagName) {
+      selectedTag.value = 'Hepsi';
+    } else {
+      await fetchContacts(currentPage.value);
+    }
+  } catch (error) {
+    addToast('Grup silinirken hata oluştu.', 'error');
+  }
+};
+
 // Modal helpers
 const openModal = (type, contact = null) => {
   activeModal.value = type;
@@ -418,9 +482,6 @@ onMounted(async () => {
         </div>
 
         <div class="nav-user-panel" v-if="currentUser">
-          <div class="user-avatar" :title="currentUser.email">
-            {{ getInitials(currentUser.username) }}
-          </div>
           <div class="user-details">
             <span class="username">{{ currentUser.username }}</span>
             <span class="user-email">{{ currentUser.email }}</span>
@@ -433,7 +494,7 @@ onMounted(async () => {
 
       <!-- Main Section -->
       <main class="container">
-        <!-- Search, Filter & Add Button Bar -->
+        <!-- Search & Add Button Bar -->
         <section class="action-bar card">
           <div class="search-box">
             <span class="search-icon">
@@ -442,78 +503,102 @@ onMounted(async () => {
             <input v-model="searchQuery" type="text" placeholder="İsim veya telefon numarası ara...">
           </div>
 
-          <div class="filter-box">
-            <select v-model="selectedTag" class="tag-select">
-              <option v-for="tag in tags" :key="tag" :value="tag">
-                {{ tag === 'Hepsi' ? 'Tüm Gruplar' : tag }}
-              </option>
-              <option value="__NEW_FILTER__">+ Yeni Grup Ekle...</option>
-            </select>
-          </div>
-
           <button @click="openModal('create')" class="btn-primary btn-add">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
             Yeni Kişi Ekle
           </button>
         </section>
 
-        <!-- Loading state -->
-        <div v-if="loading" class="loading-state">
-          <div class="spinner"></div>
-          <p>Kişiler yükleniyor...</p>
-        </div>
-
-        <!-- Contacts Grid -->
-        <div v-else>
-          <!-- Empty State -->
-          <div v-if="contacts.length === 0" class="empty-state card">
-            <div class="empty-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.956 11.956 0 0112 20.25a11.956 11.956 0 01-3-1.013v-.109m0 0.003c0-1.113.285-2.16.786-3.07M9 19.128v-.003c0-1.113-.285-2.16-.786-3.07M9 19.128A9.38 9.38 0 016.375 19.5a9.337 9.337 0 01-4.121-.952 4.125 4.125 0 017.533-2.493M9 19.128v.109A11.956 11.956 0 0012 20.25a11.956 11.956 0 003-1.013M9 8.25a3 3 0 11-6 0 3 3 0 016 0zm3 0a3 3 0 11-6 0 3 3 0 016 0zm3 0a3 3 0 11-6 0 3 3 0 016 0zm-3 8.25a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z" /></svg>
+        <!-- Two-Column Grid Layout -->
+        <div class="dashboard-content-layout">
+          <!-- Left Column: Sidebar -->
+          <aside class="groups-sidebar card">
+            <div class="sidebar-header">
+              <h3>Gruplarım</h3>
             </div>
-            <h3>Kişi Bulunamadı</h3>
-            <p v-if="searchQuery || selectedTag !== 'Hepsi'">Kriterlerinize uygun kişi bulunmamaktadır. Arama metnini değiştirmeyi deneyebilirsiniz.</p>
-            <p v-else>Henüz hiç kişi eklemediniz, eklemeye başlayabilirsiniz.</p>
-            <button v-if="!searchQuery && selectedTag === 'Hepsi'" @click="openModal('create')" class="btn-primary" style="margin-top: 15px;">İlk Kişiyi Ekle</button>
-          </div>
-
-          <!-- Contacts Grid Layout -->
-          <div v-else class="contacts-grid">
-            <div v-for="contact in contacts" :key="contact.id" class="contact-card card" @click="openModal('detail', contact)">
-              <div class="card-avatar" :class="`avatar-${contact.tag ? contact.tag.toLowerCase().replace('ı','i').replace('ş','s') : 'diger'}`">
-                {{ getInitials(contact.full_name) }}
+            <div class="groups-list">
+              <!-- Loop over tags with active class binding to selectedTag -->
+              <div v-for="tag in tags" :key="tag" class="group-item" :class="{ active: selectedTag === tag }">
+                <span class="group-name-clickable" @click="selectedTag = tag">
+                  {{ tag === 'Hepsi' ? 'Tüm Gruplar' : tag }}
+                </span>
+                <div class="group-actions" v-if="tag !== 'Hepsi' && tag !== 'Diğer'">
+                  <button @click.stop="openGroupEdit(tag)" class="btn-group-action" title="Düzenle">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>
+                  </button>
+                  <button @click.stop="openGroupDelete(tag)" class="btn-group-action delete-act" title="Sil">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                  </button>
+                </div>
               </div>
-              <div class="card-info">
-                <h3 class="contact-name">{{ contact.full_name }}</h3>
-                <p class="contact-phone">
-                  <svg viewBox="0 0 20 20" fill="currentColor" class="inline-icon"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" /></svg>
-                  {{ contact.phone }}
-                </p>
-                <div class="badge-wrapper">
-                  <span :class="['badge', `badge-${contact.tag ? contact.tag.toLowerCase().replace('ı','i').replace('ş','s') : 'diger'}`]">{{ contact.tag }}</span>
+              <!-- Add Group button -->
+              <div class="group-item add-group-sidebar-btn" @click="openModal('create_group')">
+                <span class="group-name-clickable" style="color: var(--text-muted);">+ Yeni Grup Ekle...</span>
+              </div>
+            </div>
+          </aside>
+
+          <!-- Right Column: Contacts area -->
+          <div class="contacts-area" style="flex: 1; min-width: 0;">
+            <!-- Loading state -->
+            <div v-if="loading" class="loading-state">
+              <div class="spinner"></div>
+              <p>Kişiler yükleniyor...</p>
+            </div>
+
+            <!-- Contacts Grid -->
+            <div v-else>
+              <!-- Empty State -->
+              <div v-if="contacts.length === 0" class="empty-state card">
+                <div class="empty-icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.956 11.956 0 0112 20.25a11.956 11.956 0 01-3-1.013v-.109m0 0.003c0-1.113.285-2.16.786-3.07M9 19.128v-.003c0-1.113-.285-2.16-.786-3.07M9 19.128A9.38 9.38 0 016.375 19.5a9.337 9.337 0 01-4.121-.952 4.125 4.125 0 017.533-2.493M9 19.128v.109A11.956 11.956 0 0012 20.25a11.956 11.956 0 003-1.013M9 8.25a3 3 0 11-6 0 3 3 0 016 0zm3 0a3 3 0 11-6 0 3 3 0 016 0zm3 0a3 3 0 11-6 0 3 3 0 016 0zm-3 8.25a3.75 3.75 0 100-7.5 3.75 3.75 0 000 7.5z" /></svg>
+                </div>
+                <h3>Kişi Bulunamadı</h3>
+                <p v-if="searchQuery || selectedTag !== 'Hepsi'">Kriterlerinize uygun kişi bulunmamaktadır. Arama metnini değiştirmeyi deneyebilirsiniz.</p>
+                <p v-else>Henüz hiç kişi eklemediniz, eklemeye başlayabilirsiniz.</p>
+                <button v-if="!searchQuery && selectedTag === 'Hepsi'" @click="openModal('create')" class="btn-primary" style="margin-top: 15px;">İlk Kişiyi Ekle</button>
+              </div>
+
+              <!-- Contacts Grid Layout -->
+              <div v-else class="contacts-grid">
+                <div v-for="contact in contacts" :key="contact.id" class="contact-card card" @click="openModal('detail', contact)">
+                  <div class="card-avatar">
+                    {{ getInitials(contact.full_name) }}
+                  </div>
+                  <div class="card-info">
+                    <h3 class="contact-name">{{ contact.full_name }}</h3>
+                    <p class="contact-phone">
+                      <svg viewBox="0 0 20 20" fill="currentColor" class="inline-icon"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" /></svg>
+                      {{ contact.phone }}
+                    </p>
+                    <div class="badge-wrapper">
+                      <span class="badge">{{ contact.tag }}</span>
+                    </div>
+                  </div>
+
+                  <!-- Inline Action Buttons -->
+                  <div class="card-actions" @click.stop>
+                    <button @click="openModal('edit', contact)" class="btn-icon-action btn-edit" title="Düzenle">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>
+                    </button>
+                    <button @click="openModal('delete', contact)" class="btn-icon-action btn-delete" title="Sil">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <!-- Inline Action Buttons -->
-              <div class="card-actions" @click.stop>
-                <button @click="openModal('edit', contact)" class="btn-icon-action btn-edit" title="Düzenle">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>
+              <!-- Pagination Controls -->
+              <div v-if="totalPages > 1" class="pagination-bar">
+                <button @click="fetchContacts(currentPage - 1)" :disabled="currentPage === 1" class="btn-secondary pagination-btn">
+                  Önceki
                 </button>
-                <button @click="openModal('delete', contact)" class="btn-icon-action btn-delete" title="Sil">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                <span class="pagination-info">Sayfa {{ currentPage }} / {{ totalPages }}</span>
+                <button @click="fetchContacts(currentPage + 1)" :disabled="currentPage === totalPages" class="btn-secondary pagination-btn">
+                  Sonraki
                 </button>
               </div>
             </div>
-          </div>
-
-          <!-- Pagination Controls -->
-          <div v-if="totalPages > 1" class="pagination-bar">
-            <button @click="fetchContacts(currentPage - 1)" :disabled="currentPage === 1" class="btn-secondary pagination-btn">
-              Önceki
-            </button>
-            <span class="pagination-info">Sayfa {{ currentPage }} / {{ totalPages }}</span>
-            <button @click="fetchContacts(currentPage + 1)" :disabled="currentPage === totalPages" class="btn-secondary pagination-btn">
-              Sonraki
-            </button>
           </div>
         </div>
       </main>
@@ -622,11 +707,11 @@ onMounted(async () => {
         </div>
         <div class="detail-content">
           <div class="detail-profile">
-            <div class="detail-avatar" :class="`avatar-${selectedContact.tag ? selectedContact.tag.toLowerCase().replace('ı','i').replace('ş','s') : 'diger'}`">
+            <div class="detail-avatar">
               {{ getInitials(selectedContact.full_name) }}
             </div>
             <h2>{{ selectedContact.full_name }}</h2>
-            <span :class="['badge', `badge-${selectedContact.tag ? selectedContact.tag.toLowerCase().replace('ı','i').replace('ş','s') : 'diger'}`]">{{ selectedContact.tag }}</span>
+            <span class="badge">{{ selectedContact.tag }}</span>
           </div>
 
           <div class="detail-fields">
@@ -707,6 +792,44 @@ onMounted(async () => {
             <button type="submit" class="btn-primary">Grup Ekle</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- F. Edit Group Modal -->
+    <div v-if="activeModal === 'edit_group'" class="modal-overlay" @click.self="closeModal">
+      <div class="modal-card confirm-modal">
+        <div class="modal-header">
+          <h3>Grubu Düzenle</h3>
+          <button @click="closeModal" class="btn-close-modal">&times;</button>
+        </div>
+        <form @submit.prevent="handleRenameGroup" class="modal-form">
+          <div class="input-group">
+            <label>Grup Adı *</label>
+            <input v-model="editGroupNameValue" type="text" required>
+          </div>
+          <div class="modal-actions">
+            <button type="button" @click="closeModal" class="btn-secondary">İptal</button>
+            <button type="submit" class="btn-primary">Kaydet</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- G. Delete Group Confirm Modal -->
+    <div v-if="activeModal === 'delete_group_confirm'" class="modal-overlay" @click.self="closeModal">
+      <div class="modal-card confirm-modal">
+        <div class="modal-header">
+          <h3>Grubu Sil</h3>
+          <button @click="closeModal" class="btn-close-modal">&times;</button>
+        </div>
+        <div class="confirm-content">
+          <p><strong>{{ deletingGroupName }}</strong> grubunu silmek istediğinizden emin misiniz?</p>
+          <p class="sub-text">Bu gruptaki kişiler "Diğer" grubuna aktarılacaktır.</p>
+        </div>
+        <div class="modal-actions">
+          <button @click="closeModal" class="btn-secondary">Vazgeç</button>
+          <button @click="handleDeleteGroup" class="btn-danger">Grubu Sil</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1025,37 +1148,6 @@ button {
   gap: 10px;
 }
 
-.user-avatar {
-  width: 34px;
-  height: 34px;
-  background-color: var(--primary);
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-
-.user-details {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.2;
-}
-
-.user-details .username {
-  font-weight: 600;
-  color: var(--text-heading);
-  font-size: 0.85rem;
-}
-
-.user-details .user-email {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
 .btn-logout {
   background: #1e293b;
   border: 1px solid var(--border);
@@ -1091,7 +1183,7 @@ button {
 /* ACTION BAR */
 .action-bar {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto;
   gap: 12px;
   padding: 14px 18px;
   align-items: center;
@@ -1131,17 +1223,6 @@ button {
   border-color: var(--primary);
 }
 
-.tag-select {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  outline: none;
-  background-color: var(--bg-app);
-  font-size: 0.92rem;
-  color: var(--text-main);
-  cursor: pointer;
-}
-
 .btn-add {
   display: flex;
   align-items: center;
@@ -1152,6 +1233,129 @@ button {
 .btn-add svg {
   width: 16px;
   height: 16px;
+}
+
+/* TWO-COLUMN LAYOUT AND SIDEBAR */
+.dashboard-content-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 20px;
+  align-items: start;
+  margin-top: 20px;
+}
+
+.groups-sidebar {
+  padding: 16px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header h3 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.group-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.group-item:hover {
+  background-color: var(--primary-light);
+  color: var(--text-heading);
+}
+
+.group-item.active {
+  background-color: #27272a;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.group-name-clickable {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.group-item:hover .group-actions,
+.group-item.active .group-actions {
+  opacity: 1;
+}
+
+.btn-group-action {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+}
+
+.btn-group-action:hover {
+  color: var(--text-heading);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.btn-group-action.delete-act:hover {
+  color: var(--danger);
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.btn-group-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.add-group-sidebar-btn {
+  margin-top: 6px;
+  border: 1px dashed var(--border);
+  justify-content: center;
+}
+
+.add-group-sidebar-btn:hover {
+  border-style: solid;
+  border-color: var(--text-muted);
 }
 
 /* LOADING SPIN */
@@ -1244,9 +1448,9 @@ button {
   justify-content: center;
   font-weight: 700;
   font-size: 1.05rem;
-  color: white;
+  color: #cbd5e1;
   flex-shrink: 0;
-  background-color: #374151;
+  background-color: #27272a;
 }
 
 .card-info {
@@ -1291,20 +1495,9 @@ button {
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 12px;
-  background-color: #1f2937;
+  background-color: #27272a;
   color: #cbd5e1;
 }
-
-/* AVATAR & BADGE MINIMALIST COLORS */
-.avatar-aile { background-color: #be185d; }
-.avatar-is { background-color: #1e3a8a; }
-.avatar-arkadas { background-color: #065f46; }
-.avatar-diger { background-color: #374151; }
-
-.badge-aile { background-color: #831843; color: #fbcfe8; }
-.badge-is { background-color: #1e3a8a; color: #dbeafe; }
-.badge-arkadas { background-color: #064e3b; color: #a7f3d0; }
-.badge-diger { background-color: #1f2937; color: #cbd5e1; }
 
 /* CARD ACTIONS */
 .card-actions {
@@ -1474,10 +1667,10 @@ button {
   justify-content: center;
   font-weight: 700;
   font-size: 1.6rem;
-  color: white;
+  color: #f4f4f5;
   margin-bottom: 10px;
   box-shadow: var(--shadow-md);
-  background-color: #374151;
+  background-color: #27272a;
 }
 
 .detail-profile h2 {
@@ -1571,6 +1764,27 @@ button {
 }
 
 /* RESPONSIVE MEDIA */
+@media (max-width: 768px) {
+  .dashboard-content-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .groups-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .group-item {
+    padding: 6px 12px;
+  }
+  
+  .add-group-sidebar-btn {
+    margin-top: 0;
+  }
+}
+
 @media (max-width: 600px) {
   .navbar {
     padding: 12px 18px;

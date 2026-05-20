@@ -33,3 +33,20 @@ class ContactViewSet(viewsets.ModelViewSet):
         default_tags = ["Aile", "İş", "Arkadaş", "Diğer"]
         combined_tags = list(set(default_tags + [t for t in tags_queryset if t]))
         return Response(sorted(combined_tags))
+
+    @action(detail=False, methods=['post'])
+    def rename_tag(self, request):
+        old_name = request.data.get('old_name')
+        new_name = request.data.get('new_name')
+        if not old_name or not new_name:
+            return Response({"error": "old_name ve new_name alanları zorunludur."}, status=400)
+        Contact.objects.filter(user=request.user, tag=old_name).update(tag=new_name)
+        return Response({"message": f"'{old_name}' grubu başarıyla '{new_name}' olarak güncellendi."})
+
+    @action(detail=False, methods=['post'])
+    def delete_tag(self, request):
+        tag_name = request.data.get('tag_name')
+        if not tag_name:
+            return Response({"error": "tag_name alanı zorunludur."}, status=400)
+        Contact.objects.filter(user=request.user, tag=tag_name).update(tag="Diğer")
+        return Response({"message": f"'{tag_name}' grubu başarıyla silindi ve kişiler 'Diğer' grubuna aktarıldı."})
