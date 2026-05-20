@@ -20,7 +20,11 @@ const editContactData = ref({ id: null, full_name: '', phone: '', email: '', not
 // Search & Filtering
 const searchQuery = ref('');
 const selectedTag = ref('Hepsi');
-const tags = ['Hepsi', 'Aile', 'İş', 'Arkadaş', 'Diğer'];
+const tags = ref(['Hepsi', 'Aile', 'İş', 'Arkadaş', 'Diğer']);
+
+// Custom Tag Addition State
+const customTagActive = ref(false);
+const customTagValue = ref('');
 
 // Pagination
 const currentPage = ref(1);
@@ -62,6 +66,15 @@ const fetchCurrentUser = async () => {
   }
 };
 
+const fetchTags = async () => {
+  try {
+    const response = await api.get('contacts/tags/');
+    tags.value = ['Hepsi', ...response.data];
+  } catch (error) {
+    console.error('Gruplar alınamadı:', error);
+  }
+};
+
 const handleLogin = async () => {
   authErrors.value = {};
   if (!loginForm.value.username || !loginForm.value.password) {
@@ -79,6 +92,7 @@ const handleLogin = async () => {
     addToast('Giriş başarılı.', 'success');
     loginForm.value = { username: '', password: '' };
     await fetchCurrentUser();
+    await fetchTags();
     await fetchContacts();
   } catch (error) {
     const detail = error.response?.data?.detail || 'Giriş yapılamadı. Bilgilerinizi kontrol edin.';
@@ -147,18 +161,48 @@ const fetchContacts = async (page = 1) => {
   }
 };
 
+const onTagChange = (type) => {
+  if (type === 'create') {
+    if (newContact.value.tag === '__NEW__') {
+      customTagActive.value = true;
+      customTagValue.value = '';
+    } else {
+      customTagActive.value = false;
+    }
+  } else if (type === 'edit') {
+    if (editContactData.value.tag === '__NEW__') {
+      customTagActive.value = true;
+      customTagValue.value = '';
+    } else {
+      customTagActive.value = false;
+    }
+  }
+};
+
 const handleCreateContact = async () => {
   if (!newContact.value.full_name || !newContact.value.phone) {
     addToast('İsim ve Telefon alanları zorunludur.', 'error');
     return;
   }
+  
+  const originalTag = newContact.value.tag;
+  if (customTagActive.value) {
+    if (!customTagValue.value.trim()) {
+      addToast('Lütfen yeni grup adını girin.', 'error');
+      return;
+    }
+    newContact.value.tag = customTagValue.value.trim();
+  }
+  
   try {
     await api.post('contacts/', newContact.value);
     addToast('Kişi başarıyla eklendi.', 'success');
     closeModal();
     newContact.value = { full_name: '', phone: '', email: '', note: '', tag: 'Arkadaş' };
+    await fetchTags();
     await fetchContacts(1);
   } catch (error) {
+    newContact.value.tag = originalTag;
     addToast('Kişi kaydedilirken hata oluştu.', 'error');
   }
 };
@@ -168,12 +212,24 @@ const handleUpdateContact = async () => {
     addToast('İsim ve Telefon alanları zorunludur.', 'error');
     return;
   }
+  
+  const originalTag = editContactData.value.tag;
+  if (customTagActive.value) {
+    if (!customTagValue.value.trim()) {
+      addToast('Lütfen yeni grup adını girin.', 'error');
+      return;
+    }
+    editContactData.value.tag = customTagValue.value.trim();
+  }
+  
   try {
     await api.put(`contacts/${editContactData.value.id}/`, editContactData.value);
     addToast('Kişi başarıyla güncellendi.', 'success');
     closeModal();
+    await fetchTags();
     await fetchContacts(currentPage.value);
   } catch (error) {
+    editContactData.value.tag = originalTag;
     addToast('Güncelleme sırasında hata oluştu.', 'error');
   }
 };
@@ -184,6 +240,7 @@ const handleDeleteContact = async () => {
     await api.delete(`contacts/${selectedContact.value.id}/`);
     addToast('Kişi silindi.', 'success');
     closeModal();
+    await fetchTags();
     if (contacts.value.length === 1 && currentPage.value > 1) {
       await fetchContacts(currentPage.value - 1);
     } else {
@@ -198,6 +255,8 @@ const handleDeleteContact = async () => {
 const openModal = (type, contact = null) => {
   activeModal.value = type;
   selectedContact.value = contact;
+  customTagActive.value = false;
+  customTagValue.value = '';
   if (type === 'edit' && contact) {
     editContactData.value = { ...contact };
   }
@@ -206,6 +265,8 @@ const openModal = (type, contact = null) => {
 const closeModal = () => {
   activeModal.value = null;
   selectedContact.value = null;
+  customTagActive.value = false;
+  customTagValue.value = '';
 };
 
 // Initials helper
@@ -227,8 +288,15 @@ watch(searchQuery, () => {
   }, 350);
 });
 
-watch(selectedTag, () => {
-  fetchContacts(1);
+watch(selectedTag, (newVal) => {
+  if (newVal === '__NEW_FILTER__') {
+    selectedTag.value = 'Hepsi';
+    newContact.value.tag = '__NEW__';
+    customTagActive.value = true;
+    openModal('create');
+  } else {
+    fetchContacts(1);
+  }
 });
 
 // Lifecycle
@@ -240,6 +308,7 @@ onMounted(async () => {
       const response = await api.get('me/');
       currentUser.value = response.data;
       isAuthenticated.value = true;
+      await fetchTags();
       await fetchContacts();
     } catch (error) {
       console.warn('Oturum geçersiz veya süresi dolmuş. Giriş sayfasına yönlendiriliyorsunuz.');
@@ -359,6 +428,7 @@ onMounted(async () => {
               <option v-for="tag in tags" :key="tag" :value="tag">
                 {{ tag === 'Hepsi' ? 'Tüm Gruplar' : tag }}
               </option>
+              <option value="__NEW_FILTER__">+ Yeni Grup Ekle...</option>
             </select>
           </div>
 
@@ -454,12 +524,16 @@ onMounted(async () => {
           </div>
           <div class="input-group">
             <label>Grup / Etiket</label>
-            <select v-model="newContact.tag" class="modal-select">
-              <option>Arkadaş</option>
-              <option>Aile</option>
-              <option>İş</option>
-              <option>Diğer</option>
+            <select v-model="newContact.tag" class="modal-select" @change="onTagChange('create')">
+              <option v-for="tag in tags.filter(t => t !== 'Hepsi')" :key="tag" :value="tag">
+                {{ tag }}
+              </option>
+              <option value="__NEW__">+ Yeni Grup Ekle...</option>
             </select>
+          </div>
+          <div v-if="customTagActive" class="input-group">
+            <label>Yeni Grup Adı *</label>
+            <input v-model="customTagValue" type="text" placeholder="Yeni grup adı girin..." required>
           </div>
           <div class="input-group">
             <label>Kısa Not (Opsiyonel)</label>
@@ -496,12 +570,16 @@ onMounted(async () => {
           </div>
           <div class="input-group">
             <label>Grup / Etiket</label>
-            <select v-model="editContactData.tag" class="modal-select">
-              <option>Arkadaş</option>
-              <option>Aile</option>
-              <option>İş</option>
-              <option>Diğer</option>
+            <select v-model="editContactData.tag" class="modal-select" @change="onTagChange('edit')">
+              <option v-for="tag in tags.filter(t => t !== 'Hepsi')" :key="tag" :value="tag">
+                {{ tag }}
+              </option>
+              <option value="__NEW__">+ Yeni Grup Ekle...</option>
             </select>
+          </div>
+          <div v-if="customTagActive" class="input-group">
+            <label>Yeni Grup Adı *</label>
+            <input v-model="customTagValue" type="text" placeholder="Yeni grup adı girin..." required>
           </div>
           <div class="input-group">
             <label>Kısa Not</label>
@@ -1133,6 +1211,7 @@ button {
   font-size: 1.05rem;
   color: white;
   flex-shrink: 0;
+  background-color: #374151;
 }
 
 .card-info {
@@ -1177,6 +1256,8 @@ button {
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 12px;
+  background-color: #1f2937;
+  color: #cbd5e1;
 }
 
 /* AVATAR & BADGE MINIMALIST COLORS */
@@ -1361,6 +1442,7 @@ button {
   color: white;
   margin-bottom: 10px;
   box-shadow: var(--shadow-md);
+  background-color: #374151;
 }
 
 .detail-profile h2 {
