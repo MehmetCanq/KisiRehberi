@@ -37,7 +37,16 @@ const addToast = (message, type = 'success') => {
   toasts.value.push({ id, message, type });
   setTimeout(() => {
     toasts.value = toasts.value.filter(t => t.id !== id);
-  }, 3500);
+  }, 3000);
+};
+
+// Clear Session / Logout Helper on 401
+const handleSessionExpired = () => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  isAuthenticated.value = false;
+  currentUser.value = null;
+  contacts.value = [];
 };
 
 // Auth Actions
@@ -47,6 +56,9 @@ const fetchCurrentUser = async () => {
     currentUser.value = response.data;
   } catch (error) {
     console.error('Kullanıcı bilgisi alınamadı:', error);
+    if (error.response?.status === 401) {
+      handleSessionExpired();
+    }
   }
 };
 
@@ -64,7 +76,7 @@ const handleLogin = async () => {
     localStorage.setItem('access_token', response.data.access);
     localStorage.setItem('refresh_token', response.data.refresh);
     isAuthenticated.value = true;
-    addToast('Giriş başarılı! Hoş geldiniz.', 'success');
+    addToast('Giriş başarılı.', 'success');
     loginForm.value = { username: '', password: '' };
     await fetchCurrentUser();
     await fetchContacts();
@@ -82,8 +94,7 @@ const handleRegister = async () => {
   }
   try {
     await api.post('register/', registerForm.value);
-    addToast('Kayıt başarılı! Şimdi giriş yapabilirsiniz.', 'success');
-    // Giriş sekmesine geçip kullanıcı adını hazır getir
+    addToast('Kayıt başarılı. Şimdi giriş yapabilirsiniz.', 'success');
     loginForm.value.username = registerForm.value.username;
     authTab.value = 'login';
     registerForm.value = { username: '', email: '', password: '' };
@@ -100,11 +111,7 @@ const handleRegister = async () => {
 };
 
 const handleLogout = () => {
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token');
-  isAuthenticated.value = false;
-  currentUser.value = null;
-  contacts.value = [];
+  handleSessionExpired();
   addToast('Oturum kapatıldı.', 'info');
 };
 
@@ -130,7 +137,11 @@ const fetchContacts = async (page = 1) => {
     currentPage.value = page;
   } catch (error) {
     console.error('Kişiler çekilemedi:', error);
-    addToast('Kişi listesi yüklenirken hata oluştu.', 'error');
+    if (error.response?.status === 401) {
+      handleSessionExpired();
+    } else {
+      addToast('Kişiler yüklenirken hata oluştu.', 'error');
+    }
   } finally {
     loading.value = false;
   }
@@ -146,7 +157,7 @@ const handleCreateContact = async () => {
     addToast('Kişi başarıyla eklendi.', 'success');
     closeModal();
     newContact.value = { full_name: '', phone: '', email: '', note: '', tag: 'Arkadaş' };
-    await fetchContacts(1); // Yenileyip sayfa 1'e git
+    await fetchContacts(1);
   } catch (error) {
     addToast('Kişi kaydedilirken hata oluştu.', 'error');
   }
@@ -171,7 +182,7 @@ const handleDeleteContact = async () => {
   if (!selectedContact.value) return;
   try {
     await api.delete(`contacts/${selectedContact.value.id}/`);
-    addToast('Kişi rehberden silindi.', 'success');
+    addToast('Kişi silindi.', 'success');
     closeModal();
     if (contacts.value.length === 1 && currentPage.value > 1) {
       await fetchContacts(currentPage.value - 1);
@@ -255,7 +266,7 @@ onMounted(async () => {
             </div>
             <h2>Kişi Rehberi</h2>
           </div>
-          <p class="subtitle">Kişisel bağlantılarınızı güvenle kaydedin ve yönetin</p>
+          <p class="subtitle">Kişisel bağlantılarınızı kaydedin ve yönetin</p>
         </div>
 
         <div class="auth-tabs">
@@ -267,7 +278,7 @@ onMounted(async () => {
         <form v-if="authTab === 'login'" @submit.prevent="handleLogin" class="auth-form">
           <div class="input-group">
             <label for="login-username">Kullanıcı Adı</label>
-            <input v-model="loginForm.username" id="login-username" type="text" placeholder="kullanici_adi" required autocomplete="username">
+            <input v-model="loginForm.username" id="login-username" type="text" placeholder="kullanıcı adı" required autocomplete="username">
           </div>
           <div class="input-group">
             <label for="login-password">Şifre</label>
@@ -280,7 +291,7 @@ onMounted(async () => {
         <form v-else @submit.prevent="handleRegister" class="auth-form">
           <div class="input-group">
             <label for="reg-username">Kullanıcı Adı</label>
-            <input v-model="registerForm.username" id="reg-username" type="text" placeholder="kullanici_adi" required autocomplete="username">
+            <input v-model="registerForm.username" id="reg-username" type="text" placeholder="kullanıcı adı" required autocomplete="username">
             <span v-if="authErrors.username" class="error-msg">{{ authErrors.username[0] }}</span>
           </div>
           <div class="input-group">
@@ -337,7 +348,7 @@ onMounted(async () => {
           <div class="filter-box">
             <select v-model="selectedTag" class="tag-select">
               <option v-for="tag in tags" :key="tag" :value="tag">
-                {{ tag === 'Hepsi' ? '🏷️ Tüm Gruplar' : `🏷️ ${tag}` }}
+                {{ tag === 'Hepsi' ? 'Tüm Gruplar' : tag }}
               </option>
             </select>
           </div>
@@ -363,8 +374,8 @@ onMounted(async () => {
             </div>
             <h3>Kişi Bulunamadı</h3>
             <p v-if="searchQuery || selectedTag !== 'Hepsi'">Kriterlerinize uygun kişi bulunmamaktadır. Arama metnini değiştirmeyi deneyebilirsiniz.</p>
-            <p v-else>Henüz hiç kişi eklemedin, <strong>+ Ekle</strong> butonu ile eklemeye başlayabilirsin.</p>
-            <button v-if="!searchQuery && selectedTag === 'Hepsi'" @click="openModal('create')" class="btn-primary" style="margin-top: 15px;">İlk Kişini Ekle</button>
+            <p v-else>Henüz hiç kişi eklemediniz, eklemeye başlayabilirsiniz.</p>
+            <button v-if="!searchQuery && selectedTag === 'Hepsi'" @click="openModal('create')" class="btn-primary" style="margin-top: 15px;">İlk Kişiyi Ekle</button>
           </div>
 
           <!-- Contacts Grid Layout -->
@@ -399,11 +410,11 @@ onMounted(async () => {
           <!-- Pagination Controls -->
           <div v-if="totalPages > 1" class="pagination-bar">
             <button @click="fetchContacts(currentPage - 1)" :disabled="currentPage === 1" class="btn-secondary pagination-btn">
-              « Önceki
+              Önceki
             </button>
-            <span class="pagination-info">Sayfa <strong>{{ currentPage }}</strong> / <strong>{{ totalPages }}</strong></span>
+            <span class="pagination-info">Sayfa {{ currentPage }} / {{ totalPages }}</span>
             <button @click="fetchContacts(currentPage + 1)" :disabled="currentPage === totalPages" class="btn-secondary pagination-btn">
-              Sonraki »
+              Sonraki
             </button>
           </div>
         </div>
@@ -422,15 +433,15 @@ onMounted(async () => {
         <form @submit.prevent="handleCreateContact" class="modal-form">
           <div class="input-group">
             <label>Ad Soyad *</label>
-            <input v-model="newContact.full_name" type="text" placeholder="Mehmet Yılmaz" required>
+            <input v-model="newContact.full_name" type="text" placeholder="Ad Soyad" required>
           </div>
           <div class="input-group">
             <label>Telefon Numarası *</label>
-            <input v-model="newContact.phone" type="tel" placeholder="0555 123 4567" required>
+            <input v-model="newContact.phone" type="tel" placeholder="Telefon numarası" required>
           </div>
           <div class="input-group">
             <label>E-posta Adresi (Opsiyonel)</label>
-            <input v-model="newContact.email" type="email" placeholder="mehmet@eposta.com">
+            <input v-model="newContact.email" type="email" placeholder="eposta@adresi.com">
           </div>
           <div class="input-group">
             <label>Grup / Etiket</label>
@@ -443,7 +454,7 @@ onMounted(async () => {
           </div>
           <div class="input-group">
             <label>Kısa Not (Opsiyonel)</label>
-            <textarea v-model="newContact.note" rows="3" placeholder="Kişi hakkında kısa bir not..."></textarea>
+            <textarea v-model="newContact.note" rows="3" placeholder="Kişi hakkında not..."></textarea>
           </div>
 
           <div class="modal-actions">
@@ -534,7 +545,7 @@ onMounted(async () => {
                 <svg viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>
                 Kısa Not
               </span>
-              <span class="field-value note-value">{{ selectedContact.note || 'Henüz bir not eklenmemiş.' }}</span>
+              <span class="field-value note-value">{{ selectedContact.note || 'Not bulunmuyor.' }}</span>
             </div>
 
             <div class="detail-field" v-if="selectedContact.created_at">
@@ -572,7 +583,7 @@ onMounted(async () => {
         </div>
         <div class="modal-actions">
           <button @click="closeModal" class="btn-secondary">Vazgeç</button>
-          <button @click="handleDeleteContact" class="btn-danger">Evet, Sil</button>
+          <button @click="handleDeleteContact" class="btn-danger">Kişiyi Sil</button>
         </div>
       </div>
     </div>
@@ -580,37 +591,33 @@ onMounted(async () => {
 </template>
 
 <style>
-/* CSS VARIABLES & RESET */
+/* Sleek Western Minimalist Dark Theme (Linear/Vercel inspired) */
 :root {
-  --primary: hsl(243, 75%, 59%);
-  --primary-hover: hsl(243, 75%, 50%);
-  --primary-light: hsl(243, 75%, 95%);
-  --success: hsl(142, 70%, 45%);
-  --success-light: hsl(142, 70%, 95%);
-  --danger: #e11d48;
-  --danger-hover: #be123c;
-  --danger-light: #fff1f2;
-  --info: #0284c7;
-  --info-light: #f0f9ff;
-  --bg-app: #f8fafc;
-  --bg-card: #ffffff;
-  --border: #e2e8f0;
-  --text-main: #334155;
-  --text-muted: #64748b;
-  --text-heading: #0f172a;
+  --primary: #2563eb; 
+  --primary-hover: #1d4ed8;
+  --primary-light: rgba(37, 99, 235, 0.1);
+  --success: #059669; 
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --bg-app: #0b0f19; /* Deep cool navy graphite */
+  --bg-card: #151b2a; /* Cool graphite card background */
+  --border: #232d42; /* Sleek slate borders */
+  --text-main: #cbd5e1; /* Soft cool grey text */
+  --text-muted: #64748b; /* Slate grey */
+  --text-heading: #ffffff; /* Crisp white headers */
   
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
-  --radius-sm: 6px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 }
 
 body {
   background-color: var(--bg-app) !important;
   color: var(--text-main);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   margin: 0;
   padding: 0;
 }
@@ -628,20 +635,14 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.card:hover {
-  box-shadow: var(--shadow-md);
-}
-
-/* BUTTONS */
+/* BUTTONS - FAST & STATIC */
 button {
   font-family: inherit;
   font-weight: 500;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s ease;
   border: none;
   font-size: 0.95rem;
 }
@@ -649,36 +650,35 @@ button {
 .btn-primary {
   background-color: var(--primary);
   color: white;
-  padding: 10px 20px;
+  padding: 9px 18px;
 }
 
 .btn-primary:hover {
   background-color: var(--primary-hover);
-  transform: translateY(-1px);
 }
 
 .btn-secondary {
-  background-color: #f1f5f9;
+  background-color: #1e293b;
   color: var(--text-main);
-  padding: 10px 20px;
+  padding: 9px 18px;
   border: 1px solid var(--border);
 }
 
 .btn-secondary:hover {
-  background-color: #e2e8f0;
+  background-color: #334155;
 }
 
 .btn-danger {
   background-color: var(--danger);
   color: white;
-  padding: 10px 20px;
+  padding: 9px 18px;
 }
 
 .btn-danger:hover {
   background-color: var(--danger-hover);
 }
 
-/* TOASTS */
+/* TOASTS - Snappy layout */
 .toast-container {
   position: fixed;
   top: 20px;
@@ -694,37 +694,36 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 20px;
+  padding: 10px 18px;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   pointer-events: auto;
-  min-width: 280px;
-  max-width: 400px;
-  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  border-left: 5px solid transparent;
+  min-width: 250px;
+  max-width: 380px;
+  border-left: 4px solid transparent;
 }
 
 .toast-success {
-  background-color: #f0fdf4;
-  color: #166534;
-  border-left-color: #22c55e;
+  background-color: #064e3b;
+  color: #a7f3d0;
+  border-left-color: #10b981;
 }
 
 .toast-error {
-  background-color: #fef2f2;
-  color: #991b1b;
+  background-color: #7f1d1d;
+  color: #fca5a5;
   border-left-color: #ef4444;
 }
 
 .toast-info {
-  background-color: #f0f9ff;
-  color: #075985;
-  border-left-color: #0ea5e9;
+  background-color: #1e3a8a;
+  color: #bfdbfe;
+  border-left-color: #3b82f6;
 }
 
 .toast-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 /* AUTHENTICATION WRAPPER */
@@ -734,39 +733,37 @@ button {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: radial-gradient(circle at top right, rgba(79, 70, 229, 0.08), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(225, 29, 72, 0.03), transparent 30%);
+  background: #080b11;
 }
 
 .auth-card {
   width: 100%;
-  max-width: 420px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  max-width: 400px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  padding: 40px 30px;
+  box-shadow: var(--shadow-lg);
+  padding: 35px 25px;
 }
 
 .auth-header {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 25px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 6px;
 }
 
 .brand-icon {
   background-color: var(--primary-light);
   color: var(--primary);
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
@@ -774,12 +771,12 @@ button {
 }
 
 .brand-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
 .brand h2 {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 700;
   margin: 0;
   color: var(--text-heading);
@@ -787,19 +784,19 @@ button {
 
 .subtitle {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   margin: 0;
 }
 
 .auth-tabs {
   display: flex;
-  border-bottom: 2px solid var(--border);
-  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
 }
 
 .auth-tabs button {
   flex: 1;
-  padding: 12px;
+  padding: 10px;
   background: none;
   font-weight: 600;
   color: var(--text-muted);
@@ -808,7 +805,7 @@ button {
 }
 
 .auth-tabs button:hover {
-  color: var(--primary);
+  color: var(--text-main);
 }
 
 .auth-tabs button.active {
@@ -819,18 +816,18 @@ button {
 .auth-form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 15px;
 }
 
 .input-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   text-align: left;
 }
 
 .input-group label {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-main);
 }
@@ -838,35 +835,32 @@ button {
 .input-group input,
 .input-group textarea,
 .modal-select {
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   outline: none;
-  transition: all 0.2s;
-  background-color: #f8fafc;
+  background-color: #0b0f19;
+  color: var(--text-main);
 }
 
 .input-group input:focus,
 .input-group textarea:focus,
 .modal-select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
-  background-color: white;
 }
 
 .error-msg {
   color: var(--danger);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 500;
   margin-top: 2px;
 }
 
 .auth-submit {
   width: 100%;
-  padding: 12px;
+  padding: 10px;
   font-weight: 600;
-  margin-top: 10px;
 }
 
 /* NAVBAR / HEADER */
@@ -874,22 +868,22 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 40px;
-  background-color: white;
+  padding: 14px 30px;
+  background-color: var(--bg-card);
   border-bottom: 1px solid var(--border);
 }
 
 .nav-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .nav-icon {
   background-color: var(--primary-light);
   color: var(--primary);
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -897,7 +891,7 @@ button {
 }
 
 .nav-brand h1 {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--text-heading);
   margin: 0;
@@ -906,12 +900,12 @@ button {
 .nav-user-panel {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .user-avatar {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   background-color: var(--primary);
   color: white;
   border-radius: 50%;
@@ -919,7 +913,7 @@ button {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
 }
 
 .user-details {
@@ -932,20 +926,20 @@ button {
 .user-details .username {
   font-weight: 600;
   color: var(--text-heading);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .user-details .user-email {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
 }
 
 .btn-logout {
-  background: #f1f5f9;
+  background: #1e293b;
   border: 1px solid var(--border);
   color: var(--text-muted);
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -953,22 +947,22 @@ button {
 }
 
 .btn-logout:hover {
-  background-color: var(--danger-light);
+  background-color: #27272a;
   color: var(--danger);
-  border-color: #fca5a5;
+  border-color: var(--danger);
 }
 
 .btn-logout svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 /* MAIN DASHBOARD CONTAINER */
 .container {
-  max-width: 1000px;
+  max-width: 960px;
   width: 100%;
   margin: 0 auto;
-  padding: 30px 20px;
+  padding: 25px 20px;
   box-sizing: border-box;
 }
 
@@ -976,10 +970,10 @@ button {
 .action-bar {
   display: grid;
   grid-template-columns: 1fr auto auto;
-  gap: 15px;
-  padding: 16px 20px;
+  gap: 12px;
+  padding: 14px 18px;
   align-items: center;
-  margin-bottom: 25px;
+  margin-bottom: 20px;
 }
 
 .search-box {
@@ -990,40 +984,38 @@ button {
 
 .search-icon {
   position: absolute;
-  left: 12px;
+  left: 10px;
   color: var(--text-muted);
   pointer-events: none;
 }
 
 .search-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .search-box input {
   width: 100%;
-  padding: 10px 12px 10px 40px;
+  padding: 8px 10px 8px 34px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: none;
-  font-size: 0.95rem;
-  background-color: #f8fafc;
-  transition: all 0.2s;
+  font-size: 0.92rem;
+  background-color: #0b0f19;
+  color: var(--text-main);
 }
 
 .search-box input:focus {
   border-color: var(--primary);
-  background-color: white;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 .tag-select {
-  padding: 10px 16px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: none;
-  background-color: white;
-  font-size: 0.95rem;
+  background-color: #0b0f19;
+  font-size: 0.92rem;
   color: var(--text-main);
   cursor: pointer;
 }
@@ -1031,13 +1023,13 @@ button {
 .btn-add {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
+  gap: 6px;
+  padding: 8px 16px;
 }
 
 .btn-add svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 /* LOADING SPIN */
@@ -1046,15 +1038,15 @@ button {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 0;
-  gap: 15px;
+  padding: 50px 0;
+  gap: 12px;
   color: var(--text-muted);
 }
 
 .spinner {
-  width: 40px;
-  height: 40px;
-  border: 3.5px solid var(--border);
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
   border-top-color: var(--primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -1062,7 +1054,7 @@ button {
 
 /* EMPTY STATE */
 .empty-state {
-  padding: 50px 30px;
+  padding: 40px 20px;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -1070,67 +1062,66 @@ button {
 }
 
 .empty-icon {
-  width: 70px;
-  height: 70px;
+  width: 60px;
+  height: 60px;
   background-color: var(--primary-light);
   color: var(--primary);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
 }
 
 .empty-icon svg {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
 }
 
 .empty-state h3 {
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   font-weight: 700;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   color: var(--text-heading);
 }
 
 .empty-state p {
   color: var(--text-muted);
-  font-size: 0.95rem;
-  max-width: 400px;
+  font-size: 0.9rem;
+  max-width: 380px;
   margin: 0;
 }
 
 /* CONTACTS GRID */
 .contacts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 15px;
 }
 
 .contact-card {
-  padding: 20px;
+  padding: 16px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   position: relative;
   cursor: pointer;
+  background-color: var(--bg-card);
 }
 
 .contact-card:hover {
-  transform: translateY(-2px);
   border-color: var(--primary);
-  box-shadow: var(--shadow-md);
 }
 
 .card-avatar {
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   color: white;
   flex-shrink: 0;
 }
@@ -1144,28 +1135,28 @@ button {
 }
 
 .contact-name {
-  font-size: 1.05rem;
+  font-size: 0.98rem;
   font-weight: 600;
   color: var(--text-heading);
-  margin: 0 0 4px;
+  margin: 0 0 3px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 160px;
 }
 
 .contact-phone {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text-muted);
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .inline-icon {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 .badge-wrapper {
@@ -1173,32 +1164,31 @@ button {
 }
 
 .badge {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
+  padding: 3px 8px;
+  border-radius: 12px;
 }
 
-/* BADGE & AVATAR TAG COLORS */
-.avatar-aile, .badge-aile { background-color: #ec4899; }
-.avatar-is, .badge-is { background-color: #4f46e5; }
-.avatar-arkadas, .badge-arkadas { background-color: #10b981; }
-.avatar-diger, .badge-diger { background-color: #64748b; }
+/* AVATAR & BADGE MINIMALIST COLORS */
+.avatar-aile { background-color: #be185d; }
+.avatar-is { background-color: #1e3a8a; }
+.avatar-arkadas { background-color: #065f46; }
+.avatar-diger { background-color: #374151; }
 
-.badge-aile { background-color: #fdf2f8; color: #db2777; border: 1px solid #fbcfe8; }
-.badge-is { background-color: #e0e7ff; color: #4f46e5; border: 1px solid #c7d2fe; }
-.badge-arkadas { background-color: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
-.badge-diger { background-color: #f8fafc; color: #475569; border: 1px solid #cbd5e1; }
+.badge-aile { background-color: #831843; color: #fbcfe8; }
+.badge-is { background-color: #1e3a8a; color: #dbeafe; }
+.badge-arkadas { background-color: #064e3b; color: #a7f3d0; }
+.badge-diger { background-color: #1f2937; color: #cbd5e1; }
 
 /* CARD ACTIONS */
 .card-actions {
   position: absolute;
-  right: 15px;
-  top: 15px;
+  right: 12px;
+  top: 12px;
   display: flex;
-  gap: 5px;
+  gap: 4px;
   opacity: 0;
-  transition: opacity 0.2s ease;
 }
 
 .contact-card:hover .card-actions {
@@ -1206,11 +1196,11 @@ button {
 }
 
 .btn-icon-action {
-  background-color: #f8fafc;
+  background-color: #1e293b;
   border: 1px solid var(--border);
   color: var(--text-muted);
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -1219,20 +1209,20 @@ button {
 }
 
 .btn-icon-action svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .btn-edit:hover {
   background-color: var(--primary-light);
   color: var(--primary);
-  border-color: #c7d2fe;
+  border-color: var(--primary);
 }
 
 .btn-delete:hover {
-  background-color: var(--danger-light);
+  background-color: #450a0a;
   color: var(--danger);
-  border-color: #fca5a5;
+  border-color: var(--danger);
 }
 
 /* PAGINATION */
@@ -1240,34 +1230,33 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20px;
-  margin-top: 30px;
+  gap: 15px;
+  margin-top: 25px;
 }
 
 .pagination-btn {
-  padding: 8px 16px;
+  padding: 6px 12px;
   font-size: 0.85rem;
 }
 
 .pagination-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 .pagination-info {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
 }
 
-/* MODALS SYSTEM */
+/* MODALS SYSTEM - STATIC & FAST */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(4px);
+  background-color: rgba(11, 15, 25, 0.7);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -1278,11 +1267,11 @@ button {
 
 .modal-card {
   width: 100%;
-  max-width: 480px;
-  background-color: white;
+  max-width: 440px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
   overflow: hidden;
 }
 
@@ -1290,12 +1279,12 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--border);
 }
 
 .modal-header h3 {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-heading);
   margin: 0;
@@ -1304,7 +1293,7 @@ button {
 .btn-close-modal {
   background: none;
   border: none;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   color: var(--text-muted);
   padding: 0;
   line-height: 1;
@@ -1315,32 +1304,32 @@ button {
 }
 
 .modal-form {
-  padding: 24px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 15px;
 }
 
 .modal-select {
-  padding: 10px 14px;
-  background-color: #f8fafc;
+  padding: 8px 12px;
+  background-color: #0b0f19;
   border: 1px solid var(--border);
 }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 5px;
 }
 
 /* DETAIL MODAL SPECIALS */
 .detail-modal {
-  max-width: 440px;
+  max-width: 400px;
 }
 
 .detail-content {
-  padding: 30px 24px;
+  padding: 25px 20px;
 }
 
 .detail-profile {
@@ -1348,35 +1337,35 @@ button {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  margin-bottom: 25px;
+  margin-bottom: 20px;
 }
 
 .detail-avatar {
-  width: 80px;
-  height: 80px;
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 1.8rem;
+  font-size: 1.6rem;
   color: white;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   box-shadow: var(--shadow-md);
 }
 
 .detail-profile h2 {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--text-heading);
-  margin: 0 0 6px;
+  margin: 0 0 5px;
 }
 
 .detail-fields {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  margin-bottom: 25px;
+  gap: 12px;
+  margin-bottom: 20px;
 }
 
 .detail-field {
@@ -1384,56 +1373,55 @@ button {
   flex-direction: column;
   align-items: flex-start;
   text-align: left;
-  border-bottom: 1px solid #f1f5f9;
-  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
 }
 
 .field-label {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-muted);
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: 5px;
+  margin-bottom: 3px;
 }
 
 .field-label svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   color: var(--primary);
 }
 
 .field-value {
-  font-size: 1rem;
+  font-size: 0.95rem;
   color: var(--text-heading);
   font-weight: 500;
 }
 
 .note-value {
-  background-color: #f8fafc;
-  padding: 10px 14px;
+  background-color: #0b0f19;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   width: 100%;
   box-sizing: border-box;
-  font-style: italic;
   color: var(--text-main);
-  border: 1px solid #edf2f7;
-  font-size: 0.92rem;
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
 }
 
 .detail-actions {
   justify-content: center;
-  gap: 15px;
+  gap: 10px;
 }
 
 /* CONFIRM MODAL SPECIALS */
 .confirm-modal {
-  max-width: 400px;
+  max-width: 360px;
 }
 
 .confirm-content {
-  padding: 30px 24px;
+  padding: 25px 20px;
   text-align: center;
 }
 
@@ -1441,17 +1429,17 @@ button {
   color: var(--danger);
   display: flex;
   justify-content: center;
-  margin-bottom: 15px;
+  margin-bottom: 12px;
 }
 
 .confirm-content p {
-  margin: 0 0 6px;
-  font-size: 1.05rem;
+  margin: 0 0 5px;
+  font-size: 1rem;
   color: var(--text-heading);
 }
 
 .confirm-content .sub-text {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
   margin: 0;
 }
@@ -1459,17 +1447,17 @@ button {
 /* RESPONSIVE MEDIA */
 @media (max-width: 600px) {
   .navbar {
-    padding: 16px 20px;
+    padding: 12px 18px;
   }
   .nav-brand h1 {
-    font-size: 1.1rem;
+    font-size: 1rem;
   }
   .user-details {
     display: none;
   }
   .action-bar {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 10px;
   }
   .btn-add {
     width: 100%;
@@ -1479,35 +1467,13 @@ button {
     grid-template-columns: 1fr;
   }
   .card-actions {
-    opacity: 1; /* Show by default on mobile since hover is not possible */
+    opacity: 1; /* Show by default on mobile */
   }
 }
 
-/* ANIMATIONS */
+/* STATIC SPIN LOADER (Minimal spin animation) */
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes modalIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 </style>
